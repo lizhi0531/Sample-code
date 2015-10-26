@@ -1,0 +1,296 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Example code in package build process
+*-Ex.R
+
+# RStudio files
+.Rproj.user/
+
+# produced vignettes
+vignettes/*.html
+vignettes/*.pdf
+
+
+#Problem 4
+
+x.list=seq(0,1,by=0.001)
+pm1 = c()
+pm2 = c()
+
+
+##get the vectors for gini index, classification errors
+gini_ind = c()
+class_err = c()
+entropy = c()
+
+for (i in 1:length(x.list)){
+     pm1[i] = x.list[i]
+     pm2[i] = 1-pm1[i]
+     gini_ind[i] = pm1[i] * pm2[i] + pm2[i] * pm1[i]
+     class_err[i] = min(pm1[i],pm2[i])
+     entropy[i] = -((pm1[i]*log(pm1[i]))+(pm2[i]*log(pm2[i])))
+}
+
+data_frame = data.frame(gini_ind, entropy)
+plot(x.list, class_err, type='l', xlab="pm1_hat", ylim = c(0,1), ylab = "values")
+matlines(x.list, data_frame, col=c("red","grey"))
+legend("topright",legend = c("class_err","gini_ind","entropy"),col = c("black","red","grey"),lty=1,lwd=2)
+
+
+#Problem 5
+
+##put the ten estimates in a vector
+x = c(0.1, 0.15, 0.2, 0.2, 0.55, 0.6, 0.6, 0.65, 0.7, 0.75)
+
+##the first approach: majority vote approach
+class_mv = as.numeric(sum(x>0.5)/length(x) > 0.5)
+
+##the second approach: based on average probability
+class_ap = as.numeric(mean(x)>0.5)
+
+#Problem 6
+library(tm)
+##use the code from Homework 4
+
+preprocess.directory = function(dirname){
+      	
+	# the directory must have all the relevant text files
+	ds = DirSource(dirname)
+	# Corpus will make a tm document corpus from this directory
+	fp = Corpus( ds )
+	# inspect to verify
+	# inspect(fp[1])
+	# another useful command
+	# identical(fp[[1]], fp[["Federalist01.txt"]])
+	# now let us iterate through and clean this up using tm functionality
+
+	# make all words lower case
+	fp = tm_map( fp , content_transformer(tolower));
+	# remove all punctuation
+	fp = tm_map( fp, removePunctuation);
+	# remove stopwords like the, a, and so on.	
+	fp = tm_map( fp, removeWords, stopwords("english"));
+	# remove stems like suffixes
+	fp = tm_map( fp, stemDocument)
+	# remove extra whitespace
+	fp = tm_map( fp, stripWhitespace)	
+	
+	# now write the corpus out to the files for our future use.
+	# MAKE SURE THE _CLEAN DIRECTORY EXISTS
+	writeCorpus( fp , sprintf('%s_clean',dirname) )
+}
+
+
+preprocess.directory("fp_hamilton_train")
+preprocess.directory("fp_hamilton_test")
+preprocess.directory("fp_madison_train")
+preprocess.directory("fp_madison_test")
+
+read.directory <- function(dirname) {
+    # Store the infiles in a list
+    infiles = list();
+    # Get a list of filenames in the directory
+    filenames = dir(dirname,full.names=TRUE);
+    for (i in 1:length(filenames)){
+        infiles[[i]] = scan(filenames[i],what="",quiet=TRUE);
+         }
+    return(infiles)
+}
+
+hamilton.train = read.directory("fp_hamilton_train_clean")
+hamilton.test = read.directory("fp_hamilton_test_clean")
+madison.train = read.directory("fp_madison_train_clean")
+madison.test = read.directory("fp_madison_test_clean")
+
+make.sorted.dictionary.df <- function(infiles){
+    # This returns a dataframe that is sorted by the number of times 
+    # a word appears
+    
+    # List of vectors to one big vetor
+    dictionary.full <- unlist(infiles) 
+    # Tabulates the full dictionary
+    tabulate.dic <- tabulate(factor(dictionary.full)) 
+    # Find unique values
+    dictionary <- unique(dictionary.full) 
+    # Sort them alphabetically
+    dictionary <- sort(dictionary)
+    dictionary.df <- data.frame(word = dictionary, count = tabulate.dic)
+    sort.dictionary.df <- dictionary.df[order(dictionary.df$count,decreasing=TRUE),];
+    return(sort.dictionary.df)
+}
+
+full.list = c(hamilton.train,hamilton.test,madison.train,madison.test)
+dict = make.sorted.dictionary.df(full.list)
+
+make.document.term.matrix <- function(infiles,dictionary){
+    # This takes the text and dictionary objects from above and outputs a 
+    # document term matrix
+    num.infiles <- length(infiles);
+    num.words <- nrow(dictionary);
+    # Instantiate a matrix where rows are documents and columns are words
+    dtm <- mat.or.vec(num.infiles,num.words); # A matrix filled with zeros
+    for (i in 1:num.infiles){
+        num.words.infile <- length(infiles[[i]]);
+        infile.temp <- infiles[[i]];
+        for (j in 1:num.words.infile){
+            ind <- which(dictionary == infile.temp[j])[[1]];
+            # print(sprintf('%s,%s', i , ind))
+            dtm[i,ind] <- dtm[i,ind] + 1;
+        }
+    }
+return(dtm);
+}
+
+dtm.hamilton.train = make.document.term.matrix(hamilton.train,dict)
+dtm.hamilton.test = make.document.term.matrix(hamilton.test,dict)
+dtm.madison.train = make.document.term.matrix(madison.train,dict)
+dtm.madison.test = make.document.term.matrix(madison.test,dict)
+
+#set up for part (a)
+##create labels for each dtm
+label.hamilton.train = rep(1,nrow(dtm.hamilton.train))
+label.madison.train = rep(0,nrow(dtm.madison.train))
+label.hamilton.test = rep(1,nrow(dtm.hamilton.test))
+label.madison.test = rep(0,nrow(dtm.madison.test))
+
+##combine each dtm and labels
+dtm.train = rbind(dtm.hamilton.train,dtm.madison.train)
+label.train = c(label.hamilton.train,label.madison.train)
+dtm.test = rbind(dtm.hamilton.test,dtm.madison.test)
+label.test = c(label.hamilton.test,label.madison.test)
+
+dict.word = as.vector(dict$word)
+data.frame.train = data.frame(dtm.train, as.factor(label.train))
+colnames(data.frame.train) = c(dict.word,"y")
+
+data.frame.test = data.frame(dtm.test, as.factor(label.test))
+colnames(data.frame.test) = c(dict.word,"y")
+
+
+library(rpart)
+
+#(a)
+
+#default uses "gini" split
+tree.dtm.train = rpart(y ~ ., data = data.frame.train, method="class")
+tree.dtm.test = predict(tree.dtm.train,data.frame.test[,-ncol(data.frame.test)],type="class")
+
+correct_classification_rate = 1 - sum(as.numeric(tree.dtm.test!=label.test)) / length(tree.dtm.test) 
+false_negative_rate = sum(tree.dtm.test[1:length(label.hamilton.test)] != label.test[1:length(label.hamilton.test)]) / length(label.hamilton.test) 
+false_positive_rate = sum(tree.dtm.test[-(1:length(label.hamilton.test))] != label.test[-(1:length(label.hamilton.test))]) / length(label.madison.test)
+
+rate_frame = data.frame(correct_classification_rate,false_negative_rate,false_positive_rate)
+
+rate_frame
+
+##plot the gini tree
+plot(tree.dtm.train,asp=0.5)
+text(tree.dtm.train, use.n=TRUE)
+
+#(b)
+##use split by information gain(ig)
+tree.dtm.train.ig = rpart(y ~ ., data = data.frame.train, parms=list(split='information'))
+tree.dtm.test.ig = predict(tree.dtm.train.ig,data.frame.test[,-ncol(data.frame.test)],type="class")
+
+correct_classification_rate_ig = 1 - sum(as.numeric(tree.dtm.test.ig!=label.test)) / length(tree.dtm.test.ig) 
+false_negative_rate_ig = sum(tree.dtm.test.ig[1:length(label.hamilton.test)] != label.test[1:length(label.hamilton.test)]) / length(label.hamilton.test) 
+false_positive_rate_ig = sum(tree.dtm.test.ig[-(1:length(label.hamilton.test))] != label.test[-(1:length(label.hamilton.test))]) / length(label.madison.test)
+
+rate_frame_ig = data.frame(correct_classification_rate_ig,false_negative_rate_ig,false_positive_rate_ig)
+
+rate_frame_ig
+
+
+#(c)
+
+##plot the information gain tree in (b)
+plot(tree.dtm.train.ig,asp=0.5)
+text(tree.dtm.train.ig, use.n=TRUE)
+
+
+
+#Problem 7
+
+##combine the training and testing dtm and center and scale the whole dtm
+
+dtm = rbind(dtm.train,dtm.test)
+dtm.scaled = scale(dtm)
+
+
+##set all the NA terms to zero for the glmnet()
+
+colsum = colSums(dtm.scaled)
+na.list = is.na(colsum)
+na.ind = which(na.list[na.list=TRUE])
+dtm.scaled[,na.ind] = 0
+
+##split the dtm into training and test
+dtm.train.scaled = dtm.scaled[1:nrow(dtm.train),]
+dtm.test.scaled = dtm.scaled[-(1:nrow(dtm.train)),]
+
+
+
+
+
+install.packages("glmnet",repos = "http://mirror.bjtu.edu.cn/cran/", dependencies=TRUE)
+
+library(glmnet)
+
+
+#(a)
+
+##refer to the writeup##
+
+#(b)
+cv.ridge.fit = cv.glmnet(dtm.train.scaled, as.matrix(label.train), family="binomial", alpha=0)
+
+ridge.pred = predict(cv.ridge.fit, dtm.test.scaled, type = "class")
+
+#calculate the rates
+ridge.pred = as.numeric(ridge.pred)
+correct_classification_ridge = 1 - sum(ridge.pred != label.test) / length(label.test) 
+false_negative_ridge = sum(ridge.pred[1:length(label.hamilton.test)] != label.test[1:length(label.hamilton.test)]) / length(label.hamilton.test) 
+false_positive_ridge = sum(ridge.pred[-(1:length(label.hamilton.test))] != label.test[-(1:length(label.hamilton.test))]) / length(label.madison.test)
+
+rate_frame_ridge = data.frame(correct_classification_ridge,false_negative_ridge,false_positive_ridge)
+
+rate_frame_ridge
+
+#find the 10 most important words with their coefficients
+
+fit.ridge = glmnet(dtm.train.scaled,as.matrix(label.train),alpha=0)
+ridge.coef = fit.ridge$beta[,which(cv.ridge.fit$lambda == cv.ridge.fit$lambda.min)]
+sorted.ridge.coef = sort(abs(ridge.coef), decreasing=TRUE)
+abs.coef.list.ridge = sorted.ridge.coef[1:10]
+###index: 2085,933,1042,866,1503,2182,500,897,62,1491
+ind.list.ridge = c(2085,933,1042,866,1503,2182,500,897,62,1491)
+word.coef.frame.ridge = data.frame("ridge.word"=dict.word[ind.list.ridge], "ridge.coef"=ridge.coef[ind.list.ridge])
+word.coef.frame.ridge
+
+#(c)
+cv.lasso.fit = cv.glmnet(dtm.train.scaled, as.matrix(label.train), family="binomial", alpha=1)
+
+lasso.pred = predict(cv.lasso.fit, dtm.test.scaled, type = "class")
+
+#calculate the rates
+lasso.pred = as.numeric(lasso.pred)
+correct_classification_lasso = 1 - sum(lasso.pred != label.test) / length(label.test) 
+false_negative_lasso = sum(lasso.pred[1:length(label.hamilton.test)] != label.test[1:length(label.hamilton.test)]) / length(label.hamilton.test) 
+false_positive_lasso = sum(lasso.pred[-(1:length(label.hamilton.test))] != label.test[-(1:length(label.hamilton.test))]) / length(label.madison.test)
+
+rate_frame_lasso = data.frame(correct_classification_lasso,false_negative_lasso,false_positive_lasso)
+
+rate_frame_lasso
+
+
+#find the 10 most important words with their coefficients
+fit.lasso = glmnet(dtm.train.scaled,as.matrix(label.train),alpha=1)
+lasso.coef = fit.lasso$beta[,which(cv.lasso.fit$lambda == cv.lasso.fit$lambda.min)]
+sorted.lasso.coef = sort(abs(lasso.coef), decreasing=TRUE)
+abs.coef.list.lasso = sorted.lasso.coef[1:10]
+###index: 1042,808,1470,1155,1180,1322,48,137,559,216
+ind.list.lasso = c(1042,808,1470,1155,1180,1322,48,137,559,216)
+word.coef.frame.lasso = data.frame("lasso.word"=dict.word[ind.list.lasso], "lasso.coef"=lasso.coef[ind.list.lasso])
+word.coef.frame.lasso
